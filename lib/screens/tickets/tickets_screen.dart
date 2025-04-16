@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import '../../services/firebase_service.dart';
 import '../../models/ticket.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'scan_ticket_screen.dart';
 
 class LoadingIndicator extends StatelessWidget {
   const LoadingIndicator({super.key});
@@ -85,99 +87,78 @@ class _TicketsScreenState extends State<TicketsScreen> with AutomaticKeepAliveCl
   }
 
   void _showTicketDetails(Ticket ticket) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.7,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        expand: false,
-        builder: (context, scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          padding: const EdgeInsets.all(16),
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Billet #${ticket.ticketNumber}',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
+        content: SingleChildScrollView(
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                'Billet #${ticket.ticketNumber}',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 24),
               QrImageView(
                 data: ticket.qrCode,
-                version: 6,
-                size: 200,
+                version: QrVersions.auto,
+                size: 200.0,
               ),
               const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Statut'),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ticket.isPaid
-                                ? Colors.green[100]
-                                : Colors.orange[100],
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            ticket.isPaid ? 'Payé' : 'En attente',
-                            style: TextStyle(
-                              color: ticket.isPaid
-                                  ? Colors.green[900]
-                                  : Colors.orange[900],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Prix'),
-                        Text(
-                          '${ticket.price.toStringAsFixed(2)} €',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              Text(
+                'Code du billet: ${ticket.ticketNumber}',
+                style: Theme.of(context).textTheme.bodyLarge,
+                textAlign: TextAlign.center,
               ),
-              if (!ticket.isPaid)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // TODO: Implement payment
-                    },
-                    icon: const Icon(Icons.payment),
-                    label: const Text('Payer maintenant'),
+              const SizedBox(height: 16),
+              Text(
+                'Statut:',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: ticket.isPaid
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  ticket.isPaid ? 'Payé' : 'En attente',
+                  style: TextStyle(
+                    color: ticket.isPaid ? Colors.green : Colors.orange,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Prix:',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              Text(
+                '${ticket.price.toStringAsFixed(2)} €',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
             ],
           ),
         ),
+        actions: [
+          if (!ticket.isPaid)
+            TextButton(
+              onPressed: () {
+                // TODO: Implémenter le paiement
+              },
+              child: const Text('Payer'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+        ],
       ),
     );
   }
@@ -187,19 +168,30 @@ class _TicketsScreenState extends State<TicketsScreen> with AutomaticKeepAliveCl
     super.build(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mes Billets'),
+        title: const Text('Mes billets'),
+        actions: [
+          if (Provider.of<FirebaseService>(context).user?.role == 'organizer')
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ScanTicketScreen(),
+                  ),
+                );
+              },
+            ),
+        ],
       ),
       body: _tickets.isEmpty && _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _tickets.isEmpty
-              ? const Center(
-                  child: Text('Vous n\'avez pas encore de billets'),
-                )
+              ? const Center(child: Text('Aucun billet trouvé'))
               : RefreshIndicator(
                   onRefresh: () async {
+                    _tickets.clear();
                     setState(() {
-                      _tickets.clear();
-                      _currentPage = 1;
                       _hasMore = true;
                     });
                     await _loadMoreTickets();

@@ -80,14 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           SizedBox(height: 8),
-                          Text(
-                            'Email: ${FirebaseService.defaultOrganizerEmail}',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          Text(
-                            'Mot de passe: ${FirebaseService.defaultOrganizerPassword}',
-                            style: TextStyle(color: Colors.white),
-                          ),
+                          
                         ],
                       ),
                     ),
@@ -116,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Champ mot de passe
                     TextField(
                       controller: _passwordController,
-                      obscureText: true,
+                      obscureText: true, // Masquer le mot de passe
                       style: TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Mot de passe',

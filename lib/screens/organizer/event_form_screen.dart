@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 import '../../services/firebase_service.dart';
+import '../../theme/app_theme.dart';
 
 class EventFormScreen extends StatefulWidget {
   final Map<String, dynamic>? event;
@@ -20,16 +24,41 @@ class _EventFormScreenState extends State<EventFormScreen> {
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _isLoading = false;
+  File? _imageFile;
+  String? _imageUrl;
 
   @override
   void initState() {
     super.initState();
     if (widget.event != null) {
-      _nameController.text = widget.event!['name'] ?? '';
+      _imageUrl = widget.event!['imageUrl'];
+      _nameController.text = widget.event!['title'] ?? widget.event!['name'] ?? '';
       _descriptionController.text = widget.event!['description'] ?? '';
       _locationController.text = widget.event!['location'] ?? '';
       _priceController.text = widget.event!['price']?.toString() ?? '';
-      // TODO: Set date and time from event
+      
+      // Définir la date et l'heure à partir de l'événement
+      if (widget.event!['date'] != null) {
+        try {
+          _selectedDate = DateTime.parse(widget.event!['date']);
+        } catch (e) {
+          print('Erreur lors de la conversion de la date: $e');
+        }
+      }
+      
+      if (widget.event!['time'] != null) {
+        try {
+          final timeParts = widget.event!['time'].split(':');
+          if (timeParts.length >= 2) {
+            _selectedTime = TimeOfDay(
+              hour: int.parse(timeParts[0]),
+              minute: int.parse(timeParts[1]),
+            );
+          }
+        } catch (e) {
+          print('Erreur lors de la conversion de l\'heure: $e');
+        }
+      }
     }
   }
 
@@ -85,20 +114,33 @@ class _EventFormScreenState extends State<EventFormScreen> {
     try {
       final firebaseService = Provider.of<FirebaseService>(context, listen: false);
       final eventData = {
-        'name': _nameController.text,
+        'title': _nameController.text, // Changé de 'name' à 'title' pour correspondre au modèle Event
         'description': _descriptionController.text,
         'location': _locationController.text,
         'price': double.parse(_priceController.text),
         'date': _selectedDate!.toIso8601String(),
-        'time': '${_selectedTime!.hour}:${_selectedTime!.minute}',
+        'time': '${_selectedTime!.hour}:${_selectedTime!.minute.toString().padLeft(2, '0')}',
       };
 
+      if (_imageFile != null) {
+        final imageUrl = await firebaseService.uploadEventImage(_imageFile!);
+        eventData['imageUrl'] = imageUrl;
+      }
+
       if (widget.event != null) {
-        // TODO: Implement update event API call
-        // await apiService.updateEvent(widget.event!['id'], eventData);
+        await firebaseService.updateEvent(widget.event!['id'], eventData);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Événement mis à jour avec succès')),
+          );
+        }
       } else {
-        // TODO: Implement create event API call
-        // await apiService.createEvent(eventData);
+        await firebaseService.createEvent(eventData);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Événement créé avec succès')),
+          );
+        }
       }
 
       if (mounted) {
@@ -117,11 +159,97 @@ class _EventFormScreenState extends State<EventFormScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1200,
+        maxHeight: 1200,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        setState(() {
+          _imageFile = File(pickedFile.path);
+          _imageUrl = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Image sélectionnée avec succès')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aucune image sélectionnée')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de la sélection de l\'image: ${e.toString()}')),
+      );
+    }
+  }
+
+  Widget _buildImagePicker() {
+    return Column(
+      children: [
+        if (_imageFile != null)
+          Stack(
+            alignment: Alignment.topRight,
+            children: [
+              Image.file(
+                _imageFile!,
+                height: 200,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => setState(() {
+                  _imageFile = null;
+                }),
+              ),
+            ],
+          )
+        else if (_imageUrl != null)
+          Stack(
+            alignment: Alignment.topRight,
+            children: [
+              Image.network(
+                _imageUrl!,
+                height: 200,
+                width: double.infinity,
+                fit: BoxFit.cover,
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => setState(() {
+                  _imageUrl = null;
+                }),
+              ),
+            ],
+          ),
+        const SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: _pickImage,
+          icon: const Icon(Icons.image),
+          label: Text(_imageFile == null && _imageUrl == null
+              ? 'Ajouter une image'
+              : 'Changer l\'image'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryColor,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.event == null ? 'Créer un Événement' : 'Modifier l\'Événement'),
+        backgroundColor: AppTheme.primaryColor,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -132,6 +260,8 @@ class _EventFormScreenState extends State<EventFormScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    _buildImagePicker(),
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _nameController,
                       decoration: const InputDecoration(
@@ -160,6 +290,7 @@ class _EventFormScreenState extends State<EventFormScreen> {
                         return null;
                       },
                     ),
+                    const SizedBox(height: 16),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _locationController,

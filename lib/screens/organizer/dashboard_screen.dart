@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/firebase_service.dart';
+import '../events/events_screen.dart';
+import '../tickets/tickets_screen.dart';
+import 'event_form_screen.dart';
+import 'ticket_validation_stats_screen.dart';
+import 'sales_stats_screen.dart';
+import '../tickets/scan_ticket_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -23,18 +29,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() => _isLoading = true);
     try {
       final firebaseService = Provider.of<FirebaseService>(context, listen: false);
-      // TODO: Implement API call to get dashboard data
-      // final data = await apiService.getDashboardData();
+      
+      // Récupérer les événements et tickets via les méthodes publiques de FirebaseService
+      final events = await firebaseService.getEvents();
+      final tickets = await firebaseService.getUserTickets();
+      
+      // Calculer le total des revenus
+      double totalRevenue = 0.0;
+      int totalSoldTickets = 0;
+      
+      for (var ticket in tickets) {
+        if (ticket['status'] == 'paid') {
+          totalSoldTickets++;
+          if (ticket.containsKey('price')) {
+            totalRevenue += (ticket['price'] is num) 
+                ? (ticket['price'] as num).toDouble() 
+                : double.tryParse(ticket['price'].toString()) ?? 0.0;
+          }
+        }
+      }
+      
       setState(() {
         _dashboardData = {
-          'totalEvents': 0,
-          'totalTickets': 0,
-          'totalRevenue': 0.0,
+          'totalEvents': events.length,
+          'totalTickets': totalSoldTickets,
+          'totalRevenue': totalRevenue,
         };
       });
     } catch (e) {
+      print('Erreur lors du chargement des données: ${e.toString()}');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(content: Text("Erreur lors du chargement des données: ${e.toString()}")),
       );
     } finally {
       setState(() => _isLoading = false);
@@ -127,26 +152,78 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
+                    GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16.0,
+                      mainAxisSpacing: 16.0,
+                      childAspectRatio: 2.5,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
                       children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              // TODO: Navigate to create event screen
-                            },
-                            icon: const Icon(Icons.add),
-                            label: const Text('Créer un Événement'),
-                          ),
+                        _buildActionButton(
+                          'Créer un Événement',
+                          Icons.add,
+                          Colors.blue.shade600,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => EventFormScreen(event: null),
+                              ),
+                            );
+                          },
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              // TODO: Navigate to tickets management screen
-                            },
-                            icon: const Icon(Icons.list),
-                            label: const Text('Gérer les Billets'),
-                          ),
+                        _buildActionButton(
+                          'Gérer les Billets',
+                          Icons.list,
+                          Colors.blue.shade500,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const TicketsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildActionButton(
+                          'Statistiques de Validation',
+                          Icons.bar_chart,
+                          Colors.blue.shade700,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const TicketValidationStatsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildActionButton(
+                          'Statistiques de Ventes',
+                          Icons.trending_up,
+                          Colors.blue.shade400,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const SalesStatsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildActionButton(
+                          'Scanner un Ticket',
+                          Icons.qr_code_scanner,
+                          Colors.blue.shade800,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ScanTicketScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -156,4 +233,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
     );
   }
+}
+
+Widget _buildActionButton(String label, IconData icon, Color color, VoidCallback onPressed) {
+  return Container(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: [
+          Colors.blue.shade300,
+          color == Colors.blue.shade700 ? Colors.blue.shade800 : Colors.blue.shade700,
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.blue.shade700.withOpacity(0.3),
+          blurRadius: 8,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    ),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: Colors.white, size: 24),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }

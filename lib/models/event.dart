@@ -1,14 +1,15 @@
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Event {
-  final int id;
+  final String id;
   final String title;
   final String description;
   final DateTime date;
   final String location;
   final double price;
   final int capacity;
-  final int organizerId;
+  final String organizerId;
   final String? imageUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -37,21 +38,39 @@ class Event {
     this.availableTickets = availableTickets ?? capacity;
 
   factory Event.fromJson(Map<String, dynamic> json) {
+    // Fonction pour convertir différents types de date en DateTime
+    DateTime parseDate(dynamic dateValue) {
+      if (dateValue == null) return DateTime.now();
+      if (dateValue is DateTime) return dateValue;
+      if (dateValue is String) return DateTime.parse(dateValue);
+      // Gestion des Timestamp de Firebase
+      if (dateValue.runtimeType.toString().contains('Timestamp')) {
+        return DateTime.fromMillisecondsSinceEpoch(
+          dateValue.millisecondsSinceEpoch,
+        );
+      }
+      return DateTime.now();
+    }
+
     return Event(
-      id: json['id'] is String ? int.parse(json['id']) : json['id'],
-      title: json['title'],
-      description: json['description'],
-      date: json['date'] is String ? DateTime.parse(json['date']) : json['date'],
-      location: json['location'],
-      organizerId: json['organizer_id'] ?? json['organizerId'] ?? 1,
-      price: double.parse(json['price'].toString()),
-      capacity: json['capacity'] ?? json['total_tickets'] ?? 100,
+      id: json['id'].toString(),
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      date: parseDate(json['date']),
+      location: json['location'] ?? '',
+      organizerId: json['organizer_id'].toString(),
+      price: json['price'] is double
+          ? json['price']
+          : double.parse(json['price'].toString()),
+      capacity: json['capacity'] is int
+          ? json['capacity']
+          : int.parse(json['capacity'].toString()),
       availableTickets: json['available_tickets'] ?? json['availableTickets'] ?? json['capacity'] ?? 100,
       status: json['status'] ?? 'active',
       category: json['category'] ?? 'Divers',
       imageUrl: json['image_url'] ?? json['imageUrl'],
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      createdAt: json['created_at'] != null ? parseDate(json['created_at']) : null,
+      updatedAt: json['updated_at'] != null ? parseDate(json['updated_at']) : null,
     );
   }
 

@@ -143,26 +143,36 @@ class _EventsScreenState extends State<EventsScreen> {
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(12),
-                                        color: event.isAvailable ? AppTheme.accentColor : Colors.grey.withOpacity(0.5),
-                                      ),
-                                      child: ElevatedButton(
-                                        onPressed: event.isAvailable ? () => _purchaseTicket(event) : null,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.transparent,
-                                          shadowColor: Colors.transparent,
-                                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.email, color: AppTheme.primaryColor),
+                                          onPressed: () => _contactOrganizer(event),
+                                          tooltip: 'Contacter l\'organisateur',
                                         ),
-                                        child: Text(
-                                          event.isAvailable ? 'Acheter' : 'Complet',
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(12),
+                                            color: event.isAvailable ? AppTheme.accentColor : Colors.grey.withOpacity(0.5),
+                                          ),
+                                          child: ElevatedButton(
+                                            onPressed: event.isAvailable ? () => _purchaseTicket(event) : null,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.transparent,
+                                              shadowColor: Colors.transparent,
+                                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                            ),
+                                            child: Text(
+                                              event.isAvailable ? 'Acheter' : 'Complet',
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                      ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -205,5 +215,16 @@ class _EventsScreenState extends State<EventsScreen> {
         );
       }
     }
+  }
+  
+  void _contactOrganizer(Event event) {
+    Navigator.pushNamed(
+      context,
+      '/contact-organizer',
+      arguments: {
+        'eventId': event.id.toString(),
+        'eventName': event.title,
+      },
+    );
   }
 }

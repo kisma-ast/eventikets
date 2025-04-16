@@ -23,10 +23,9 @@ class _EventsManagementScreenState extends State<EventsManagementScreen> {
     setState(() => _isLoading = true);
     try {
       final firebaseService = Provider.of<FirebaseService>(context, listen: false);
-      // TODO: Implement API call to get organizer's events
-      // final events = await apiService.getOrganizerEvents();
+      final events = await firebaseService.getOrganizerEvents();
       setState(() {
-        _events = [];
+        _events = events;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -40,8 +39,7 @@ class _EventsManagementScreenState extends State<EventsManagementScreen> {
   Future<void> _deleteEvent(String eventId) async {
     try {
       final firebaseService = Provider.of<FirebaseService>(context, listen: false);
-      // TODO: Implement API call to delete event
-      // await apiService.deleteEvent(eventId);
+      await firebaseService.deleteEvent(eventId);
       await _loadEvents();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -65,7 +63,12 @@ class _EventsManagementScreenState extends State<EventsManagementScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => Navigator.pushNamed(context, '/events/create'),
+            onPressed: () async {
+              final result = await Navigator.pushNamed(context, '/event-form');
+              if (result == true) {
+                _loadEvents();
+              }
+            },
             tooltip: 'Créer un événement',
           ),
         ],
@@ -85,7 +88,12 @@ class _EventsManagementScreenState extends State<EventsManagementScreen> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed: () => Navigator.pushNamed(context, '/events/create'),
+                            onPressed: () async {
+                              final result = await Navigator.pushNamed(context, '/event-form');
+                              if (result == true) {
+                                _loadEvents();
+                              }
+                            },
                             icon: const Icon(Icons.add),
                             label: const Text('Créer un Événement'),
                           ),
@@ -141,10 +149,14 @@ class _EventsManagementScreenState extends State<EventsManagementScreen> {
                               ],
                               onSelected: (value) async {
                                 if (value == 'edit') {
-                                  Navigator.pushNamed(
+                                  final result = await Navigator.pushNamed(
                                     context,
-                                    '/events/${event['id']}/edit',
+                                    '/event-form',
+                                    arguments: event,
                                   );
+                                  if (result == true) {
+                                    _loadEvents();
+                                  }
                                 } else if (value == 'delete') {
                                   final confirmed = await showDialog<bool>(
                                     context: context,
@@ -179,7 +191,8 @@ class _EventsManagementScreenState extends State<EventsManagementScreen> {
                             ),
                             onTap: () => Navigator.pushNamed(
                               context,
-                              '/events/${event['id']}/details',
+                              '/event-form',
+                              arguments: event,
                             ),
                           ),
                         );

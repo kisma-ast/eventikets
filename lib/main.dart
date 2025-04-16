@@ -8,9 +8,12 @@ import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/change_password_screen.dart';
 import 'screens/events/events_screen.dart';
+import 'screens/events/contact_organizer_screen.dart';
 import 'screens/tickets/tickets_screen.dart';
 import 'screens/organizer/dashboard_screen.dart';
 import 'screens/organizer/events_management_screen.dart';
+import 'screens/organizer/event_form_screen.dart';
+import 'screens/profile/profile_screen.dart';
 import 'theme/app_theme.dart';
 import 'models/user.dart';
 
@@ -42,6 +45,16 @@ class MyApp extends StatelessWidget {
           '/main': (context) => const MainScreen(),
           '/register': (context) => const RegisterScreen(),
           '/change_password': (context) => const ChangePasswordScreen(),
+          '/event-form': (context) => EventFormScreen(event: ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?),
+          '/profile': (context) => const ProfileScreen(),
+          '/login': (context) => const LoginScreen(),
+          '/contact-organizer': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>;
+            return ContactOrganizerScreen(
+              eventId: args['eventId'],
+              eventName: args['eventName'],
+            );
+          },
         },
       ),
     );
@@ -67,7 +80,7 @@ class _MainScreenState extends State<MainScreen> {
       _screens = const [
         DashboardScreen(),
         EventsManagementScreen(),
-        Placeholder(), // TODO: Écran profil
+        ProfileScreen(),
       ];
       _navigationItems = const [
         BottomNavigationBarItem(
@@ -87,7 +100,7 @@ class _MainScreenState extends State<MainScreen> {
       _screens = const [
         EventsScreen(),
         TicketsScreen(),
-        Placeholder(), // TODO: Écran profil
+        ProfileScreen(),
       ];
       _navigationItems = const [
         BottomNavigationBarItem(

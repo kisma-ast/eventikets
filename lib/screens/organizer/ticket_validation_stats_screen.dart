@@ -120,6 +120,68 @@ class _TicketValidationStatsScreenState extends State<TicketValidationStatsScree
                             ),
                           ),
                         ),
+                      const SizedBox(height: 16),
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Évolution des validations',
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                height: 200,
+                                child: LineChart(
+                                  LineChartData(
+                                    gridData: FlGridData(show: true),
+                                    titlesData: FlTitlesData(
+                                      leftTitles: AxisTitles(
+                                        sideTitles: SideTitles(showTitles: true, reservedSize: 40),
+                                      ),
+                                      bottomTitles: AxisTitles(
+                                        sideTitles: SideTitles(
+                                          showTitles: true,
+                                          reservedSize: 30,
+                                          getTitlesWidget: (value, meta) {
+                                            // Afficher les jours de la semaine
+                                            final days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+                                            String text = '';
+                                            if (value >= 0 && value < days.length) {
+                                              text = days[value.toInt()];
+                                            }
+                                            return Text(text, style: const TextStyle(fontSize: 10));
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                    borderData: FlBorderData(show: true),
+                                    lineBarsData: [
+                                      LineChartBarData(
+                                        // Données de démonstration pour l'évolution des validations
+                                        spots: List.generate(7, (index) {
+                                          return FlSpot(index.toDouble(), (index * 1.5 + 3).toDouble());
+                                        }),
+                                        isCurved: true,
+                                        color: Colors.green,
+                                        barWidth: 3,
+                                        isStrokeCapRound: true,
+                                        dotData: FlDotData(show: true),
+                                        belowBarData: BarAreaData(
+                                          show: true,
+                                          color: Colors.green.withOpacity(0.2),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),

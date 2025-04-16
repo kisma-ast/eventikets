@@ -3,14 +3,29 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'dart:io';
 import '../models/user.dart' as app_user;
 import '../models/event.dart';
+import 'email_service.dart';
 
 class FirebaseService with ChangeNotifier {
   // Firebase instances
   final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  // Upload d'image d'événement
+  Future<String> uploadEventImage(File imageFile) async {
+    try {
+      final fileName = DateTime.now().millisecondsSinceEpoch.toString();
+      final reference = _storage.ref().child('event_images/$fileName');
+      final uploadTask = await reference.putFile(imageFile);
+      return await uploadTask.ref.getDownloadURL();
+    } catch (e) {
+      throw Exception('Erreur lors de l\'upload de l\'image: ${e.toString()}');
+    }
+  }
   
   // Informations de connexion par défaut pour l'organisateur
   static const String defaultOrganizerEmail = 'organizer@eventikets.com';
@@ -146,6 +161,12 @@ class FirebaseService with ChangeNotifier {
           hasDefaultCredentials: role == 'organizer'
         );
         
+        // Envoyer un email de bienvenue
+        await EmailService.sendWelcomeEmail(
+          to: email,
+          name: name,
+        );
+        
         notifyListeners();
         return _user!;
       } else {
@@ -273,6 +294,9 @@ class FirebaseService with ChangeNotifier {
       
       return events;
     } catch (e) {
+      if (e.toString().contains('ProgressEvent')) {
+        throw Exception('Erreur de connexion. Veuillez vérifier votre connexion internet.');
+      }
       throw Exception('Erreur lors du chargement des événements: ${e.toString()}');
     }
   }
@@ -343,14 +367,14 @@ class FirebaseService with ChangeNotifier {
   }
   
   // Achat de ticket
-  Future<void> purchaseTicket(int eventId) async {
+  Future<void> purchaseTicket(String eventId) async {
     try {
       if (_user == null) {
         throw Exception('Utilisateur non connecté');
       }
       
       // Vérifier si l'événement existe
-      DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId.toString()).get();
+      DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId).get();
       
       if (!eventDoc.exists) {
         throw Exception('Événement non trouvé');
@@ -365,22 +389,63 @@ class FirebaseService with ChangeNotifier {
         throw Exception('Plus de billets disponibles pour cet événement');
       }
       
+      // Générer un code de ticket unique
+      String ticketCode = 'TIX-${_user!.id}-${DateTime.now().millisecondsSinceEpoch}';
+      
       // Créer un ticket dans Firestore
-      await _firestore.collection('tickets').add({
-        'event_id': eventId.toString(),
+      DocumentReference ticketRef = await _firestore.collection('tickets').add({
+        'event_id': eventId,
         'user_id': _auth.currentUser!.uid,
         'purchase_date': FieldValue.serverTimestamp(),
         'is_validated': false,
-        'ticket_code': 'TIX-${_user!.id}-${DateTime.now().millisecondsSinceEpoch}',
+        'ticket_code': ticketCode,
+        'qr_code': '$ticketCode|$eventId', // Format: ticketCode|eventId
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       });
       
       // Mettre à jour le nombre de billets disponibles
-      await _firestore.collection('events').doc(eventId.toString()).update({
+      await _firestore.collection('events').doc(eventId).update({
         'available_tickets': availableTickets - 1,
         'updated_at': FieldValue.serverTimestamp(),
       });
+
+      // Mettre à jour le ticket avec son ID
+      await ticketRef.update({
+        'id': ticketRef.id,
+      });
+      
+      // Envoyer un email de confirmation d'achat de ticket
+      String eventDate = '';
+      if (eventData['date'] != null) {
+        try {
+          var dateValue = eventData['date'];
+          DateTime date;
+          if (dateValue is Timestamp) {
+            date = dateValue.toDate();
+          } else if (dateValue is String) {
+            date = DateTime.parse(dateValue);
+          } else if (dateValue is DateTime) {
+            date = dateValue;
+          } else {
+            date = DateTime.now();
+          }
+          eventDate = DateFormat('dd/MM/yyyy').format(date);
+          if (eventData['time'] != null) {
+            eventDate += ' à ${eventData['time']}';
+          }
+        } catch (e) {
+          eventDate = eventData['date'].toString();
+        }
+      }
+      
+      await EmailService.sendTicketConfirmation(
+        to: _user!.email,
+        eventName: eventData['title'] ?? 'Événement',
+        ticketCode: ticketCode,
+        eventDate: eventDate,
+        eventLocation: eventData['location'] ?? 'Lieu non spécifié',
+      );
     } catch (e) {
       throw Exception('Échec de l\'achat du ticket: ${e.toString()}');
     }
@@ -440,6 +505,49 @@ class FirebaseService with ChangeNotifier {
     }
   }
   
+  // Validation d'un ticket
+  Future<void> validateTicket(String ticketId, String eventId) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+
+      // Vérifier si l'utilisateur est un organisateur
+      if (_user!.role != 'organizer') {
+        throw Exception('Accès non autorisé');
+      }
+
+      // Vérifier si le ticket existe
+      DocumentSnapshot ticketDoc = await _firestore.collection('tickets').doc(ticketId).get();
+
+      if (!ticketDoc.exists) {
+        throw Exception('Ticket non trouvé');
+      }
+
+      Map<String, dynamic> ticketData = ticketDoc.data() as Map<String, dynamic>;
+
+      // Vérifier si le ticket correspond à l'événement
+      if (ticketData['event_id'] != eventId) {
+        throw Exception('Ticket invalide pour cet événement');
+      }
+
+      // Vérifier si le ticket n'a pas déjà été validé
+      if (ticketData['is_validated'] == true) {
+        throw Exception('Ticket déjà validé');
+      }
+
+      // Valider le ticket
+      await _firestore.collection('tickets').doc(ticketId).update({
+        'is_validated': true,
+        'validated_at': FieldValue.serverTimestamp(),
+        'validated_by': _user!.id,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Échec de la validation du ticket: ${e.toString()}');
+    }
+  }
+
   // Récupération des statistiques de validation
   Future<Map<String, dynamic>> getValidationStats() async {
     try {
@@ -537,5 +645,393 @@ class FirebaseService with ChangeNotifier {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
+  }
+  
+  // Récupération des événements de l'organisateur
+  Future<List<Map<String, dynamic>>> getOrganizerEvents() async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Vérifier si l'utilisateur est un organisateur
+      if (_user!.role != 'organizer') {
+        throw Exception('Accès non autorisé');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Récupérer les événements de l'organisateur
+      QuerySnapshot eventSnapshot = await _firestore.collection('events')
+          .where('organizer_id', isEqualTo: _user!.id)
+          .get();
+      
+      List<Map<String, dynamic>> events = [];
+      
+      for (var doc in eventSnapshot.docs) {
+        Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+        data['id'] = doc.id;
+        data['name'] = data['title'] ?? 'Sans titre';
+        
+        // Convertir la date Timestamp en String
+        if (data['date'] is Timestamp) {
+          data['date'] = DateFormat('dd/MM/yyyy').format((data['date'] as Timestamp).toDate());
+        } else {
+          data['date'] = 'Date non spécifiée';
+        }
+        
+        events.add(data);
+      }
+      
+      
+      return events;
+    } catch (e) {
+      throw Exception('Échec de la récupération des événements: ${e.toString()}');
+    }
+  }
+  
+  // Création d'un événement
+  Future<String> createEvent(Map<String, dynamic> eventData) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Vérifier si l'utilisateur est un organisateur
+      if (_user!.role != 'organizer') {
+        throw Exception('Accès non autorisé');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Préparer les données de l'événement
+      final data = {
+        'title': eventData['title'] ?? eventData['name'] ?? 'Sans titre',
+        'description': eventData['description'],
+        'location': eventData['location'],
+        'price': eventData['price'],
+        'date': eventData['date'],
+        'time': eventData['time'],
+        'imageUrl': eventData['imageUrl'] ?? 'https://via.placeholder.com/400x200?text=Eventikets',
+        'isAvailable': true,
+        'capacity': eventData['capacity'] ?? 100,
+        'organizer_id': _user!.id,
+        'created_at': FieldValue.serverTimestamp(),
+      };
+      
+      // Ajouter l'événement à Firestore
+      DocumentReference docRef = await _firestore.collection('events').add(data);
+      
+      // Envoyer une notification par email aux utilisateurs
+      if (eventData['notifyUsers'] == true) {
+        await _notifyUsersAboutNewEvent(data);
+      }
+      
+      return docRef.id;
+    } catch (e) {
+      throw Exception('Échec de la création de l\'événement: ${e.toString()}');
+    }
+  }
+  
+  // Notifier les utilisateurs d'un nouvel événement
+  Future<void> _notifyUsersAboutNewEvent(Map<String, dynamic> eventData) async {
+    try {
+      // Récupérer tous les utilisateurs standards
+      QuerySnapshot userSnapshot = await _firestore.collection('users')
+          .where('role', isEqualTo: 'user')
+          .get();
+      
+      String eventDate = '';
+      if (eventData['date'] != null) {
+        try {
+          final date = DateTime.parse(eventData['date']);
+          eventDate = DateFormat('dd/MM/yyyy').format(date);
+          if (eventData['time'] != null) {
+            eventDate += ' à ${eventData['time']}';
+          }
+        } catch (e) {
+          eventDate = eventData['date'];
+        }
+      }
+      
+      // Envoyer un email à chaque utilisateur
+      for (var doc in userSnapshot.docs) {
+        Map<String, dynamic> userData = doc.data() as Map<String, dynamic>;
+        String userEmail = userData['email'];
+        
+        await EmailService.sendEventNotification(
+          to: userEmail,
+          eventName: eventData['title'],
+          eventDate: eventDate,
+          eventLocation: eventData['location'],
+        );
+      }
+    } catch (e) {
+      print('Erreur lors de la notification des utilisateurs: $e');
+      // Ne pas propager l'erreur pour ne pas bloquer la création d'événement
+    }
+  }
+  
+  // Mise à jour d'un événement
+  Future<void> updateEvent(String eventId, Map<String, dynamic> eventData) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Vérifier si l'utilisateur est un organisateur
+      if (_user!.role != 'organizer') {
+        throw Exception('Accès non autorisé');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Vérifier si l'événement existe et appartient à l'organisateur
+      DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId).get();
+      
+      if (!eventDoc.exists) {
+        throw Exception('Événement non trouvé');
+      }
+      
+      Map<String, dynamic> data = eventDoc.data() as Map<String, dynamic>;
+      
+      if (data['organizer_id'] != _user!.id) {
+        throw Exception('Vous n\'êtes pas autorisé à modifier cet événement');
+      }
+      
+      // Préparer les données de mise à jour
+      final updateData = {
+        'title': eventData['title'] ?? eventData['name'] ?? 'Sans titre',
+        'description': eventData['description'],
+        'location': eventData['location'],
+        'price': eventData['price'],
+        'date': eventData['date'],
+        'time': eventData['time'],
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+      
+      // Si une nouvelle image est fournie, mettre à jour l'URL
+      if (eventData['imageUrl'] != null) {
+        updateData['imageUrl'] = eventData['imageUrl'];
+      }
+      
+      // Si la capacité est fournie, mettre à jour
+      if (eventData['capacity'] != null) {
+        updateData['capacity'] = eventData['capacity'];
+      }
+      
+      // Mettre à jour l'événement
+      await _firestore.collection('events').doc(eventId).update(updateData);
+    } catch (e) {
+      throw Exception('Échec de la mise à jour de l\'événement: ${e.toString()}');
+    }
+  }
+  
+  // Suppression d'un événement
+  Future<void> deleteEvent(String eventId) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Vérifier si l'utilisateur est un organisateur
+      if (_user!.role != 'organizer') {
+        throw Exception('Accès non autorisé');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Vérifier si l'événement existe et appartient à l'organisateur
+      DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId).get();
+      
+      if (!eventDoc.exists) {
+        throw Exception('Événement non trouvé');
+      }
+      
+      Map<String, dynamic> data = eventDoc.data() as Map<String, dynamic>;
+      
+      if (data['organizer_id'] != _user!.id) {
+        throw Exception('Vous n\'êtes pas autorisé à supprimer cet événement');
+      }
+      
+      // Supprimer l'événement
+      await _firestore.collection('events').doc(eventId).delete();
+      
+      // Supprimer également tous les tickets associés à cet événement
+      QuerySnapshot ticketSnapshot = await _firestore
+          .collection('tickets')
+          .where('event_id', isEqualTo: eventId)
+          .get();
+      
+      for (var doc in ticketSnapshot.docs) {
+        await _firestore.collection('tickets').doc(doc.id).delete();
+      }
+    } catch (e) {
+      throw Exception('Échec de la suppression de l\'événement: ${e.toString()}');
+    }
+  }
+  
+  // Mise à jour du profil utilisateur
+  Future<void> updateUserProfile(Map<String, dynamic> profileData) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Préparer les données de mise à jour
+      final updateData = {
+        'name': profileData['name'],
+      };
+      
+      // Si un email est fourni et différent de l'actuel, mettre à jour
+      if (profileData['email'] != null && profileData['email'] != _user!.email) {
+        // Mettre à jour l'email dans Firebase Auth
+        await _auth.currentUser!.updateEmail(profileData['email']);
+        updateData['email'] = profileData['email'];
+      }
+      
+      // Mettre à jour le profil dans Firestore
+      await _firestore.collection('users').doc(_user!.id).update(updateData);
+      
+      // Mettre à jour l'utilisateur local
+      _getUserData(_user!.id);
+      
+      // Envoyer un email de confirmation de mise à jour du profil
+      if (profileData['sendEmail'] == true) {
+        await EmailService.sendEmail(
+          to: _user!.email,
+          subject: 'Confirmation de mise à jour du profil',
+          body: 'Votre profil a été mis à jour avec succès.\n\nNom: ${profileData['name']}\nEmail: ${profileData['email'] ?? _user!.email}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Échec de la mise à jour du profil: ${e.toString()}');
+    }
+  }
+  
+  // Contacter un organisateur d'événement
+  Future<bool> contactOrganizer(String eventId, String message) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Récupérer les informations de l'événement
+      DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId).get();
+      
+      if (!eventDoc.exists) {
+        throw Exception('Événement non trouvé');
+      }
+      
+      Map<String, dynamic> eventData = eventDoc.data() as Map<String, dynamic>;
+      String organizerId = eventData['organizer_id'];
+      
+      // Récupérer les informations de l'organisateur
+      DocumentSnapshot organizerDoc = await _firestore.collection('users').doc(organizerId).get();
+      
+      if (!organizerDoc.exists) {
+        throw Exception('Organisateur non trouvé');
+      }
+      
+      Map<String, dynamic> organizerData = organizerDoc.data() as Map<String, dynamic>;
+      String organizerEmail = organizerData['email'];
+      
+      // Envoyer l'email à l'organisateur
+      bool success = await EmailService.sendContactOrganizer(
+        to: organizerEmail,
+        from: _user!.email,
+        eventName: eventData['title'],
+        message: message,
+      );
+      
+      return success;
+    } catch (e) {
+      print('Erreur lors du contact avec l\'organisateur: $e');
+      return false;
+    }
+  }
+  
+  // Envoyer un rappel d'événement aux participants
+  Future<void> sendEventReminders(String eventId) async {
+    try {
+      if (_user == null) {
+        throw Exception('Utilisateur non connecté');
+      }
+      
+      // Vérifier si l'utilisateur est un organisateur
+      if (_user!.role != 'organizer') {
+        throw Exception('Accès non autorisé');
+      }
+      
+      // Simuler un délai réseau
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Récupérer les informations de l'événement
+      DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId).get();
+      
+      if (!eventDoc.exists) {
+        throw Exception('Événement non trouvé');
+      }
+      
+      Map<String, dynamic> eventData = eventDoc.data() as Map<String, dynamic>;
+      
+      // Vérifier si l'événement appartient à l'organisateur
+      if (eventData['organizer_id'] != _user!.id) {
+        throw Exception('Vous n\'êtes pas autorisé à envoyer des rappels pour cet événement');
+      }
+      
+      // Récupérer tous les tickets pour cet événement
+      QuerySnapshot ticketSnapshot = await _firestore
+          .collection('tickets')
+          .where('event_id', isEqualTo: eventId)
+          .get();
+      
+      String eventDate = '';
+      if (eventData['date'] != null) {
+        try {
+          final date = DateTime.parse(eventData['date']);
+          eventDate = DateFormat('dd/MM/yyyy').format(date);
+          if (eventData['time'] != null) {
+            eventDate += ' à ${eventData['time']}';
+          }
+        } catch (e) {
+          eventDate = eventData['date'];
+        }
+      }
+      
+      // Pour chaque ticket, envoyer un rappel à l'utilisateur
+      for (var doc in ticketSnapshot.docs) {
+        Map<String, dynamic> ticketData = doc.data() as Map<String, dynamic>;
+        String userId = ticketData['user_id'];
+        
+        // Récupérer les informations de l'utilisateur
+        DocumentSnapshot userDoc = await _firestore.collection('users').doc(userId).get();
+        
+        if (userDoc.exists) {
+          Map<String, dynamic> userData = userDoc.data() as Map<String, dynamic>;
+          String userEmail = userData['email'];
+          
+          await EmailService.sendEventReminder(
+            to: userEmail,
+            eventName: eventData['title'],
+            eventDate: eventDate,
+            eventLocation: eventData['location'],
+            ticketCode: ticketData['ticket_code'],
+          );
+        }
+      }
+    } catch (e) {
+      throw Exception('Échec de l\'envoi des rappels: ${e.toString()}');
+    }
   }
 }
