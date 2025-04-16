@@ -249,7 +249,10 @@ class FirebaseService with ChangeNotifier {
       }
       
       // Récupérer les événements depuis Firestore
-      QuerySnapshot eventSnapshot = await _firestore.collection('events').get();
+      Query eventsQuery = _firestore.collection('events');
+      
+      // Exécuter la requête
+      QuerySnapshot eventSnapshot = await eventsQuery.get();
       
       List<Event> events = [];
       
