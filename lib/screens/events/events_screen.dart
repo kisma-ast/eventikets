@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:lottie/lottie.dart';
 import '../../services/firebase_service.dart';
 import '../../models/event.dart';
 import '../../theme/app_theme.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class EventsScreen extends StatefulWidget {
   const EventsScreen({super.key});
@@ -18,7 +20,7 @@ class _EventsScreenState extends State<EventsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'Tous';
-  double _maxPrice = 5000.0;
+  double _maxPrice = 5000000.0;  
   DateTime? _selectedDate;
 
   final List<String> _categories = [
@@ -141,14 +143,14 @@ class _EventsScreenState extends State<EventsScreen> {
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Prix max: €${_maxPrice.toStringAsFixed(0)}'),
+                        Text('Prix max: ${_maxPrice.toStringAsFixed(0)} FCFA'),
                         SizedBox(
                           width: 200,
                           child: Slider(
                             value: _maxPrice,
                             min: 0,
-                            max: 5000,
-                            divisions: 50,
+                            max: 5000000,
+                            divisions: 100,
                             onChanged: (value) {
                               setState(() {
                                 _maxPrice = value;
@@ -167,7 +169,8 @@ class _EventsScreenState extends State<EventsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.confirmation_number, color: AppTheme.accentColor),
-            onPressed: () => Navigator.pushNamed(context, '/tickets'),
+            onPressed: () => Navigator.pushNamed(context, '/events'),
+            tooltip: 'Voir les événements',
           ),
         ],
       ),
@@ -186,9 +189,12 @@ class _EventsScreenState extends State<EventsScreen> {
           future: _eventsFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(AppTheme.accentColor),
+              return Center(
+                child: Lottie.asset(
+                  'assets/animations/loading.json',
+                  width: 200,
+                  height: 200,
+                  fit: BoxFit.contain,
                 ),
               );
             }
@@ -250,10 +256,72 @@ class _EventsScreenState extends State<EventsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (event.imageUrl != null)
-                            Image.network(
-                              event.imageUrl!,
-                              height: 200,
-                              fit: BoxFit.cover,
+                            ClipRRect(
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                              child: event.imageUrl != null && event.imageUrl!.isNotEmpty
+                                ? Image.network(
+                                    event.imageUrl!,
+                                    height: 200,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        height: 200,
+                                        color: AppTheme.surfaceColor,
+                                        child: const Center(
+                                          child: CircularProgressIndicator(),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        height: 200,
+                                        color: AppTheme.surfaceColor,
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              const Icon(
+                                                Icons.image_not_supported,
+                                                size: 48,
+                                                color: Colors.grey,
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                'Image non disponible',
+                                                style: TextStyle(
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : Container(
+                                    height: 200,
+                                    color: AppTheme.surfaceColor,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(
+                                            Icons.image_not_supported,
+                                            size: 48,
+                                            color: Colors.grey,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Image non disponible',
+                                            style: TextStyle(
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                             ),
                           Padding(
                             padding: const EdgeInsets.all(16),
@@ -293,7 +361,7 @@ class _EventsScreenState extends State<EventsScreen> {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      '€${event.price.toStringAsFixed(2)}',
+                                      '${(event.price * 655.957).toStringAsFixed(0)} FCFA',
                                       style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
