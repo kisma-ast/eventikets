@@ -41,7 +41,7 @@ class EmailService {
         'body': body,
       },
     );
-    
+
     try {
       return await launchUrl(emailLaunchUri);
     } catch (e) {
@@ -83,6 +83,7 @@ L'équipe Eventikets
   static Future<bool> sendWelcomeEmail({
     required String to,
     required String name,
+    String additionalContent = '',
   }) async {
     final subject = 'Bienvenue sur Eventikets!';
     final body = '''
@@ -90,7 +91,7 @@ Bonjour $name,
 
 Nous sommes ravis de vous accueillir sur Eventikets, votre plateforme de gestion d'événements et de billetterie.
 
-Vous pouvez dès maintenant:
+Vous pouvez dès maintenant :
 - Parcourir les événements disponibles
 - Acheter des billets
 - Gérer vos réservations
@@ -99,7 +100,7 @@ N'hésitez pas à nous contacter si vous avez des questions.
 
 Cordialement,
 L'équipe Eventikets
-''';
+''' + (additionalContent.isNotEmpty ? '\n$additionalContent' : '');
 
     return await sendEmail(to: to, subject: subject, body: body);
   }
@@ -113,19 +114,20 @@ L'équipe Eventikets
   }) async {
     final subject = 'Nouvel événement disponible: $eventName';
     final body = '''
-Cher utilisateur,
+Bonjour,
 
-Un nouvel événement vient d'être ajouté sur Eventikets!
+Nous sommes ravis de vous informer qu'un nouvel événement "$eventName" est disponible !
 
-"$eventName"
-Date: $eventDate
-Lieu: $eventLocation
+Détails de l'événement :
+- Date : $eventDate
+- Lieu : $eventLocation
 
-Réservez vos billets dès maintenant sur l'application Eventikets.
+N'hésitez pas à consulter l'application pour plus d'informations.
 
-À bientôt!
+Cordialement,
 L'équipe Eventikets
 ''';
+
 
     return await sendEmail(to: to, subject: subject, body: body);
   }

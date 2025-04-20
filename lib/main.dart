@@ -5,8 +5,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'services/firebase_service.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/welcome_gate_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/change_password_screen.dart';
+import 'screens/auth/force_password_change_screen.dart';
 import 'screens/events/events_screen.dart';
 import 'screens/events/contact_organizer_screen.dart';
 import 'screens/tickets/tickets_screen.dart';
@@ -14,8 +16,10 @@ import 'screens/organizer/dashboard_screen.dart';
 import 'screens/organizer/events_management_screen.dart';
 import 'screens/organizer/event_form_screen.dart';
 import 'screens/profile/profile_screen.dart';
+import 'screens/favorites/favorites_screen.dart';
 import 'theme/app_theme.dart';
 import 'models/user.dart';
+import 'models/favorite_event.dart';
 
 void main() async {
   // Initialiser Flutter
@@ -34,27 +38,40 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => FirebaseService(),
-      child: MaterialApp(
-        title: 'Eventikets',
-        theme: AppTheme.darkTheme(),
-        debugShowCheckedModeBanner: false,
-        home: const LoginScreen(),
-        routes: {
-          '/main': (context) => const MainScreen(),
-          '/register': (context) => const RegisterScreen(),
-          '/change_password': (context) => const ChangePasswordScreen(),
-          '/event-form': (context) => EventFormScreen(event: ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?),
-          '/profile': (context) => const ProfileScreen(),
-          '/login': (context) => const LoginScreen(),
-          '/contact-organizer': (context) {
-            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>;
-            return ContactOrganizerScreen(
-              eventId: args['eventId'],
-              eventName: args['eventName'],
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => FirebaseService()),
+        ChangeNotifierProvider(create: (_) => FavoriteEvent()),
+      ],
+      child: Consumer<FirebaseService>(
+        builder: (context, firebaseService, _) {
+          // Vérifier si l'utilisateur doit changer son mot de passe
+          final user = firebaseService.user;
+          if (user != null && user.hasDefaultCredentials) {
+            return MaterialApp(
+              title: 'Eventikets',
+              theme: AppTheme.darkTheme(),
+              debugShowCheckedModeBanner: false,
+              home: const ForcePasswordChangeScreen(),
+              routes: {
+                '/login': (context) => const LoginScreen(),
+                '/force_password_change': (context) => const ForcePasswordChangeScreen(),
+              },
             );
-          },
+          }
+          
+          return MaterialApp(
+            title: 'Eventikets',
+            theme: AppTheme.darkTheme(),
+            debugShowCheckedModeBanner: false,
+            home: const WelcomeGateScreen(),
+            routes: {
+              '/main': (context) => const MainScreen(),
+              '/events': (context) => const EventsScreen(),
+              '/login': (context) => const LoginScreen(),
+              '/favorites': (context) => const FavoritesScreen(),
+            },
+          );
         },
       ),
     );

@@ -7,6 +7,7 @@ import 'event_form_screen.dart';
 import 'ticket_validation_stats_screen.dart';
 import 'sales_stats_screen.dart';
 import '../tickets/scan_ticket_screen.dart';
+import 'manager_management_screen.dart'; // Import the new screen
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -200,9 +201,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           },
                         ),
                         _buildActionButton(
-                          'Statistiques de Ventes',
+                          'Statistiques des Ventes',
                           Icons.trending_up,
-                          Colors.blue.shade400,
+                          Colors.blue.shade800,
                           () {
                             Navigator.push(
                               context,
@@ -213,9 +214,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           },
                         ),
                         _buildActionButton(
-                          'Scanner un Ticket',
+                          'Scanner un Billet',
                           Icons.qr_code_scanner,
-                          Colors.blue.shade800,
+                          Colors.blue.shade900,
                           () {
                             Navigator.push(
                               context,
@@ -225,12 +226,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             );
                           },
                         ),
+                        // Add the new button for manager management
+                        _buildActionButton(
+                          'Gérer les Gestionnaires',
+                          Icons.manage_accounts,
+                          Colors.teal, // Choose an appropriate color
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ManagerManagementScreen(),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Gestion des Événements',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // TODO: Add event management list or summary here
                   ],
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildActionButton(
+      String title, IconData icon, Color color, VoidCallback onPressed) {
+    return ElevatedButton.icon(
+      icon: Icon(icon, color: Colors.white),
+      label: Text(
+        title,
+        style: const TextStyle(color: Colors.white, fontSize: 12),
+        textAlign: TextAlign.center,
+      ),
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      ),
     );
   }
 }

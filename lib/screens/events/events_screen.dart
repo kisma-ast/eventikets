@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+
 import 'package:lottie/lottie.dart';
 import '../../services/firebase_service.dart';
 import '../../models/event.dart';
+import '../../models/event_card.dart';
+import '../../models/favorite_event.dart';
 import '../../theme/app_theme.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 class EventsScreen extends StatefulWidget {
   const EventsScreen({super.key});
@@ -20,7 +21,7 @@ class _EventsScreenState extends State<EventsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _selectedCategory = 'Tous';
-  double _maxPrice = 5000000.0;  
+  double _maxPrice = 5000000.0;
   DateTime? _selectedDate;
 
   final List<String> _categories = [
@@ -29,7 +30,7 @@ class _EventsScreenState extends State<EventsScreen> {
     'Cinéma',
     'Technologie',
     'Sport',
-    'Culture'
+    'Culture',
   ];
 
   @override
@@ -76,6 +77,18 @@ class _EventsScreenState extends State<EventsScreen> {
           'Événements',
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.favorite, color: Colors.pinkAccent),
+            tooltip: 'Voir mes favoris',
+            onPressed: () => Navigator.pushNamed(context, '/favorites'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.confirmation_number, color: AppTheme.accentColor),
+            onPressed: () => Navigator.pushNamed(context, '/events'),
+            tooltip: 'Voir les événements',
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(140),
           child: Column(
@@ -166,13 +179,7 @@ class _EventsScreenState extends State<EventsScreen> {
             ],
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.confirmation_number, color: AppTheme.accentColor),
-            onPressed: () => Navigator.pushNamed(context, '/events'),
-            tooltip: 'Voir les événements',
-          ),
-        ],
+
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -239,177 +246,26 @@ class _EventsScreenState extends State<EventsScreen> {
                   _eventsFuture = _loadEvents();
                 });
               },
-              child: ListView.builder(
-                padding: const EdgeInsets.all(8),
-                itemCount: filteredEvents.length,
-                itemBuilder: (context, index) {
-                  final event = filteredEvents[index];
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: AppTheme.surfaceColor.withAlpha(179),
-                        border: Border.all(color: AppTheme.primaryColor.withAlpha(77)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (event.imageUrl != null)
-                            ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                              child: event.imageUrl != null && event.imageUrl!.isNotEmpty
-                                ? Image.network(
-                                    event.imageUrl!,
-                                    height: 200,
-                                    fit: BoxFit.cover,
-                                    loadingBuilder: (context, child, loadingProgress) {
-                                      if (loadingProgress == null) return child;
-                                      return Container(
-                                        height: 200,
-                                        color: AppTheme.surfaceColor,
-                                        child: const Center(
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                      );
-                                    },
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        height: 200,
-                                        color: AppTheme.surfaceColor,
-                                        child: Center(
-                                          child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              const Icon(
-                                                Icons.image_not_supported,
-                                                size: 48,
-                                                color: Colors.grey,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Text(
-                                                'Image non disponible',
-                                                style: TextStyle(
-                                                  color: Colors.grey[600],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  )
-                                : Container(
-                                    height: 200,
-                                    color: AppTheme.surfaceColor,
-                                    child: Center(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          const Icon(
-                                            Icons.image_not_supported,
-                                            size: 48,
-                                            color: Colors.grey,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'Image non disponible',
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  event.title,
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppTheme.accentColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.calendar_today, size: 16),
-                                    const SizedBox(width: 8),
-                                    Text(DateFormat('dd/MM/yyyy').format(event.date)),
-                                    const SizedBox(width: 16),
-                                    const Icon(Icons.access_time, size: 16),
-                                    const SizedBox(width: 8),
-                                    Text(event.formattedTime),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.location_on, size: 16),
-                                    const SizedBox(width: 8),
-                                    Expanded(child: Text(event.location)),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      '${(event.price * 655.957).toStringAsFixed(0)} FCFA',
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    Row(
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.email, color: AppTheme.primaryColor),
-                                          onPressed: () => _contactOrganizer(event),
-                                          tooltip: 'Contacter l\'organisateur',
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(12),
-                                            color: event.isAvailable ? AppTheme.accentColor : Colors.grey.withOpacity(0.5),
-                                          ),
-                                          child: ElevatedButton(
-                                            onPressed: event.isAvailable ? () => _purchaseTicket(event) : null,
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.transparent,
-                                              shadowColor: Colors.transparent,
-                                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                            ),
-                                            child: Text(
-                                              event.isAvailable ? 'Acheter' : 'Complet',
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ).animate(
-                      delay: const Duration(milliseconds: 200),
-                    ).fadeIn(
-                      duration: const Duration(milliseconds: 600),
-                    ),
+              child: Consumer<FavoriteEvent>(
+                builder: (context, favoriteEvent, _) {
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(8),
+                    itemCount: filteredEvents.length,
+                    itemBuilder: (context, index) {
+                      final event = filteredEvents[index];
+                      return EventCard(
+                        event: event,
+                        isFavorite: favoriteEvent.isFavorite(event.id),
+                        onFavorite: () => favoriteEvent.toggleFavorite(event.id),
+                        onBuy: () {
+                          Navigator.pushNamed(
+                            context,
+                            '/payment-method',
+                            arguments: event,
+                          );
+                        },
+                      );
+                    },
                   );
                 },
               ),
@@ -417,38 +273,6 @@ class _EventsScreenState extends State<EventsScreen> {
           },
         ),
       ),
-    );
-  }
-
-  Future<void> _purchaseTicket(Event event) async {
-    try {
-      final firebaseService = Provider.of<FirebaseService>(context, listen: false);
-      await firebaseService.purchaseTicket(event.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Billet acheté avec succès!')),
-        );
-        setState(() {
-          _eventsFuture = _loadEvents();
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString())),
-        );
-      }
-    }
-  }
-  
-  void _contactOrganizer(Event event) {
-    Navigator.pushNamed(
-      context,
-      '/contact-organizer',
-      arguments: {
-        'eventId': event.id.toString(),
-        'eventName': event.title,
-      },
     );
   }
 }

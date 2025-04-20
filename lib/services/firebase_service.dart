@@ -127,7 +127,7 @@ class FirebaseService with ChangeNotifier {
   }
   
   // Inscription utilisateur
-  Future<app_user.User> register(String name, String email, String password, {String role = 'user'}) async {
+  Future<app_user.User> register(String name, String email, String password, {String role = 'user', bool hasDefaultCredentials = false}) async {
     try {
       // Créer l'utilisateur dans Firebase Auth
       final userCredential = await _auth.createUserWithEmailAndPassword(
@@ -141,7 +141,7 @@ class FirebaseService with ChangeNotifier {
           'name': name,
           'email': email,
           'role': role,
-          'has_default_credentials': role == 'organizer',
+          'has_default_credentials': hasDefaultCredentials || role == 'organizer',
           'created_at': FieldValue.serverTimestamp(),
           'updated_at': FieldValue.serverTimestamp(),
         };
@@ -158,7 +158,7 @@ class FirebaseService with ChangeNotifier {
           email: email,
           role: role,
           token: token,
-          hasDefaultCredentials: role == 'organizer'
+          hasDefaultCredentials: hasDefaultCredentials || role == 'organizer'
         );
         
         // Envoyer un email de bienvenue
@@ -201,16 +201,31 @@ class FirebaseService with ChangeNotifier {
       // Récupérer l'email de l'utilisateur
       String email = currentUser.email ?? '';
       
-      // Réauthentifier l'utilisateur avec son mot de passe actuel
-      firebase_auth.AuthCredential credential = firebase_auth.EmailAuthProvider.credential(
-        email: email,
-        password: currentPassword,
-      );
-      
-      await currentUser.reauthenticateWithCredential(credential);
-      
-      // Mettre à jour le mot de passe
-      await currentUser.updatePassword(newPassword);
+      // Pour les utilisateurs avec des identifiants par défaut (première connexion)
+      if (_user != null && _user!.hasDefaultCredentials && currentPassword.isEmpty) {
+        // Cas spécial pour les gestionnaires avec mot de passe temporaire
+        // Dans un cas réel, il faudrait une méthode plus sécurisée
+        // Cette implémentation est simplifiée pour la démonstration
+        try {
+          // Mettre à jour directement le mot de passe
+          await currentUser.updatePassword(newPassword);
+        } catch (e) {
+          // Si l'authentification échoue, essayer de se reconnecter
+          // Note: Ceci est une simplification, en production il faudrait une meilleure gestion
+          throw Exception('Impossible de mettre à jour le mot de passe. Veuillez vous reconnecter et réessayer.');
+        }
+      } else {
+        // Cas normal: réauthentifier l'utilisateur avec son mot de passe actuel
+        firebase_auth.AuthCredential credential = firebase_auth.EmailAuthProvider.credential(
+          email: email,
+          password: currentPassword,
+        );
+        
+        await currentUser.reauthenticateWithCredential(credential);
+        
+        // Mettre à jour le mot de passe
+        await currentUser.updatePassword(newPassword);
+      }
       
       // Mettre à jour le champ hasDefaultCredentials dans Firestore
       if (_user != null && _user!.hasDefaultCredentials) {
@@ -241,12 +256,107 @@ class FirebaseService with ChangeNotifier {
     }
   }
   
+  // Ajouter un gestionnaire
+  Future<app_user.User> addManager(String email) async {
+    try {
+      if (_user == null || _user!.role != 'organizer') {
+        throw Exception('Seuls les organisateurs peuvent ajouter des gestionnaires');
+      }
+      
+      // Générer un mot de passe temporaire
+      final temporaryPassword = 'Manager${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+      
+      // Vérifier si l'email existe déjà
+      final existingUsers = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .get();
+      
+      if (existingUsers.docs.isNotEmpty) {
+        throw Exception('Un utilisateur avec cet email existe déjà');
+      }
+      
+      // Créer le compte gestionnaire
+      final newManager = await register(
+        'Gestionnaire', // Nom par défaut
+        email,
+        temporaryPassword,
+        role: 'manager',
+        hasDefaultCredentials: true
+      );
+      
+      // Envoyer un email avec les identifiants temporaires
+      await EmailService.sendWelcomeEmail(
+        to: email,
+        name: 'Gestionnaire',
+        additionalContent: 'Votre mot de passe temporaire est: $temporaryPassword\nVeuillez le changer lors de votre première connexion.'
+      );
+      
+      return newManager;
+    } catch (e) {
+      throw Exception("Échec de l'ajout du gestionnaire: ${e.toString()}");
+    }
+  }
+  
+  // Supprimer un gestionnaire
+  Future<void> removeManager(String managerId) async {
+    try {
+      if (_user == null || _user!.role != 'organizer') {
+        throw Exception('Seuls les organisateurs peuvent supprimer des gestionnaires');
+      }
+      
+      // Vérifier si l'utilisateur existe et est un gestionnaire
+      final userDoc = await _firestore.collection('users').doc(managerId).get();
+      
+      if (!userDoc.exists) {
+        throw Exception('Gestionnaire non trouvé');
+      }
+      
+      final userData = userDoc.data() as Map<String, dynamic>;
+      if (userData['role'] != 'manager') {
+        throw Exception('L\'utilisateur n\'est pas un gestionnaire');
+      }
+      
+      // Supprimer le compte dans Firebase Auth
+      // Note: Cela nécessite des fonctions Cloud Firebase pour être complètement sécurisé
+      // Cette implémentation est simplifiée pour la démonstration
+      await _firestore.collection('users').doc(managerId).delete();
+      
+      return;
+    } catch (e) {
+      throw Exception('Échec de la suppression du gestionnaire: ${e.toString()}');
+    }
+  }
+  
+  // Récupérer la liste des gestionnaires
+  Future<List<Map<String, dynamic>>> getManagers() async {
+    try {
+      if (_user == null || _user!.role != 'organizer') {
+        throw Exception('Seuls les organisateurs peuvent voir les gestionnaires');
+      }
+      
+      final managersSnapshot = await _firestore
+          .collection('users')
+          .where('role', isEqualTo: 'manager')
+          .get();
+      
+      return managersSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'email': data['email'] ?? '',
+          'name': data['name'] ?? 'Gestionnaire',
+          'hasDefaultCredentials': data['has_default_credentials'] ?? false,
+        };
+      }).toList();
+    } catch (e) {
+      throw Exception('Échec de la récupération des gestionnaires: ${e.toString()}');
+    }
+  }
+  
   // Récupération des événements
   Future<List<Event>> getEvents() async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Récupérer les événements depuis Firestore
       Query eventsQuery = _firestore.collection('events');
@@ -289,8 +399,8 @@ class FirebaseService with ChangeNotifier {
         events.add(Event.fromJson(data));
       }
       
-      // Si aucun événement n'existe, créer des événements par défaut pour l'organisateur
-      if (events.isEmpty && _user!.role == 'organizer') {
+      // Si aucun événement n'existe et que l'utilisateur est connecté en tant qu'organisateur, créer des événements par défaut
+      if (_user != null && events.isEmpty && _user!.role == 'organizer') {
         await _createDefaultEvents();
         return getEvents();
       }
@@ -372,9 +482,6 @@ class FirebaseService with ChangeNotifier {
   // Achat de ticket
   Future<void> purchaseTicket(String eventId) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'événement existe
       DocumentSnapshot eventDoc = await _firestore.collection('events').doc(eventId).get();
@@ -457,9 +564,6 @@ class FirebaseService with ChangeNotifier {
   // Récupération des tickets de l'utilisateur
   Future<List<dynamic>> getUserTickets() async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Récupérer les tickets de l'utilisateur
       QuerySnapshot ticketSnapshot = await _firestore
@@ -511,9 +615,6 @@ class FirebaseService with ChangeNotifier {
   // Validation d'un ticket
   Future<void> validateTicket(String ticketId, String eventId) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
 
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
@@ -554,9 +655,6 @@ class FirebaseService with ChangeNotifier {
   // Récupération des statistiques de validation
   Future<Map<String, dynamic>> getValidationStats() async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
@@ -653,9 +751,6 @@ class FirebaseService with ChangeNotifier {
   // Récupération des événements de l'organisateur
   Future<List<Map<String, dynamic>>> getOrganizerEvents() async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
@@ -697,9 +792,6 @@ class FirebaseService with ChangeNotifier {
   // Création d'un événement
   Future<String> createEvent(Map<String, dynamic> eventData) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
@@ -780,9 +872,6 @@ class FirebaseService with ChangeNotifier {
   // Mise à jour d'un événement
   Future<void> updateEvent(String eventId, Map<String, dynamic> eventData) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
@@ -836,9 +925,6 @@ class FirebaseService with ChangeNotifier {
   // Suppression d'un événement
   Future<void> deleteEvent(String eventId) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
@@ -881,9 +967,6 @@ class FirebaseService with ChangeNotifier {
   // Mise à jour du profil utilisateur
   Future<void> updateUserProfile(Map<String, dynamic> profileData) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Simuler un délai réseau
       await Future.delayed(const Duration(milliseconds: 800));
@@ -922,9 +1005,6 @@ class FirebaseService with ChangeNotifier {
   // Contacter un organisateur d'événement
   Future<bool> contactOrganizer(String eventId, String message) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Simuler un délai réseau
       await Future.delayed(const Duration(milliseconds: 800));
@@ -967,9 +1047,6 @@ class FirebaseService with ChangeNotifier {
   // Envoyer un rappel d'événement aux participants
   Future<void> sendEventReminders(String eventId) async {
     try {
-      if (_user == null) {
-        throw Exception('Utilisateur non connecté');
-      }
       
       // Vérifier si l'utilisateur est un organisateur
       if (_user!.role != 'organizer') {
